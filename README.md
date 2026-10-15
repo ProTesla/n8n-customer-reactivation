@@ -100,6 +100,10 @@ examples/         example email and weekly report
 - **n8n licensing.** This repo's files are MIT-licensed, but n8n itself is under the [Sustainable Use License](https://docs.n8n.io/sustainable-use-license/). Running it for your own business or building automations for clients who cannot edit workflows is allowed. Reselling access to n8n is not. If you plan to manage several clients on one instance, check with n8n first.
 - **Scale.** Built and tested at about 5 emails per run on a free Gmail account (500 recipients per day). For regular campaigns use a transactional provider such as Resend with a verified domain.
 
+## Workflow Images
+
+Includes the images of the workflows 
+
 ## Contributing
 
 Issues and pull requests are welcome. Before committing any exported workflow, run `python scripts/sanitize.py` and then `python scripts/sanitize.py --check` (CI runs the same check). See [SECURITY.md](SECURITY.md).
