@@ -1,0 +1,477 @@
+{
+  "name": "WF8 - Unsubscribe Handler",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "unsubscribe",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "7d76a321-08aa-44c8-a15f-d2be4e2f011d",
+      "name": "Unsubscribe GET",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "d3e5f331-f859-49f4-a51b-615ee2010432"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "unsubscribe",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "9a9460e4-6aff-4aeb-ad8a-57a3d04c0273",
+      "name": "Unsubscribe POST",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        190
+      ],
+      "webhookId": "33f80f80-0774-4b67-8b18-d78a1338e8f2"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst TZ = 'Africa/Lagos';\nconst s = (v) => String(v === null || v === undefined ? '' : v).trim();\nconst todayStr = () => new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date());\nconst nowIso = () => new Date(Date.now() + 3600000).toISOString().replace(/\\.\\d{3}Z$/, '+01:00');\nconst uid = (p) => p + '-' + Date.now().toString(36).toUpperCase() + '-' + Math.random().toString(36).slice(2, 7).toUpperCase();\nconst isEmail = (e) => /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(s(e));\nconst isDate = (d) => /^\\d{4}-\\d{2}-\\d{2}$/.test(d) && !isNaN(Date.parse(d + 'T00:00:00Z'));\nconst daysBetween = (a, b) => Math.floor((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000);\nconst mkLog = (o) => Object.assign({ event_id: uid('EVT'), customer_id: '', email: '', event_type: '', campaign_id: '', email_sequence: '', message_id: '', booking_id: '', timestamp: nowIso(), status: '', error: '', metadata: '' }, o);\nconst mkErr = (o) => Object.assign({ error_id: uid('ERR'), workflow: '', customer_id: '', node: '', error_type: 'UNKNOWN', message: '', timestamp: nowIso(), retry_count: 0, resolved: 'FALSE', execution_id: String($execution.id) }, o);\nreturn [{ json: { method: 'GET', token: s($json.query && $json.query.t) } }];"
+      },
+      "id": "2a3addca-0305-4325-bd28-fc00bc6ef72a",
+      "name": "Tag GET",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        260,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst TZ = 'Africa/Lagos';\nconst s = (v) => String(v === null || v === undefined ? '' : v).trim();\nconst todayStr = () => new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date());\nconst nowIso = () => new Date(Date.now() + 3600000).toISOString().replace(/\\.\\d{3}Z$/, '+01:00');\nconst uid = (p) => p + '-' + Date.now().toString(36).toUpperCase() + '-' + Math.random().toString(36).slice(2, 7).toUpperCase();\nconst isEmail = (e) => /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(s(e));\nconst isDate = (d) => /^\\d{4}-\\d{2}-\\d{2}$/.test(d) && !isNaN(Date.parse(d + 'T00:00:00Z'));\nconst daysBetween = (a, b) => Math.floor((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000);\nconst mkLog = (o) => Object.assign({ event_id: uid('EVT'), customer_id: '', email: '', event_type: '', campaign_id: '', email_sequence: '', message_id: '', booking_id: '', timestamp: nowIso(), status: '', error: '', metadata: '' }, o);\nconst mkErr = (o) => Object.assign({ error_id: uid('ERR'), workflow: '', customer_id: '', node: '', error_type: 'UNKNOWN', message: '', timestamp: nowIso(), retry_count: 0, resolved: 'FALSE', execution_id: String($execution.id) }, o);\nreturn [{ json: { method: 'POST', token: s($json.query && $json.query.t) } }];"
+      },
+      "id": "285cf01c-8b81-4a00-88aa-e03fb3ec95ee",
+      "name": "Tag POST",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        260,
+        190
+      ]
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "",
+          "mode": "list",
+          "cachedResultName": "WF0 - Get Settings"
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "9435fbbf-85ce-4781-9553-fd364c5852f6",
+      "name": "Get Settings",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        520,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Customers",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "6b3583c9-2373-4474-a6e9-5426e277bd42",
+      "name": "Read Customers",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        780,
+        0
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "REPLACE_ME",
+          "name": "Google Service Account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst TZ = 'Africa/Lagos';\nconst s = (v) => String(v === null || v === undefined ? '' : v).trim();\nconst todayStr = () => new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date());\nconst nowIso = () => new Date(Date.now() + 3600000).toISOString().replace(/\\.\\d{3}Z$/, '+01:00');\nconst uid = (p) => p + '-' + Date.now().toString(36).toUpperCase() + '-' + Math.random().toString(36).slice(2, 7).toUpperCase();\nconst isEmail = (e) => /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(s(e));\nconst isDate = (d) => /^\\d{4}-\\d{2}-\\d{2}$/.test(d) && !isNaN(Date.parse(d + 'T00:00:00Z'));\nconst daysBetween = (a, b) => Math.floor((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000);\nconst mkLog = (o) => Object.assign({ event_id: uid('EVT'), customer_id: '', email: '', event_type: '', campaign_id: '', email_sequence: '', message_id: '', booking_id: '', timestamp: nowIso(), status: '', error: '', metadata: '' }, o);\nconst mkErr = (o) => Object.assign({ error_id: uid('ERR'), workflow: '', customer_id: '', node: '', error_type: 'UNKNOWN', message: '', timestamp: nowIso(), retry_count: 0, resolved: 'FALSE', execution_id: String($execution.id) }, o);\n\nlet req = null;\ntry { req = $('Tag POST').first().json; } catch (e) { req = null; }\nif (!req) { try { req = $('Tag GET').first().json; } catch (e) { req = null; } }\nreq = req || { method: 'GET', token: '' };\nconst S = $('Get Settings').first().json.settings;\nconst esc = (x) => String(x).replace(/[&<>\"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;' }[ch]));\nconst biz = esc(s(S.business_name));\nconst token = s(req.token).replace(/[^a-zA-Z0-9]/g, '');\nconst customers = $('Read Customers').all().map(i => i.json);\nconst c = token ? customers.find(x => s(x.unsubscribe_token) === token) : null;\nconst page = (title, msg, form) => '<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>' + title + '</title><style>body{font-family:system-ui,sans-serif;background:#f4f5f7;margin:0;display:flex;min-height:100vh;align-items:center;justify-content:center}.card{background:#fff;padding:32px;border-radius:12px;max-width:420px;box-shadow:0 2px 12px rgba(0,0,0,.08);text-align:center}button{background:#1E3A8A;color:#fff;border:0;padding:12px 24px;border-radius:8px;font-size:16px;cursor:pointer}h1{font-size:20px}p{color:#444}</style></head><body><div class=\"card\"><h1>' + title + '</h1><p>' + msg + '</p>' + (form || '') + '</div></body></html>';\nif (!c) return [{ json: { kind: 'SHOW', html: page('Link not valid', 'This unsubscribe link is not valid or has expired.') } }];\nconst done = page('You are unsubscribed', 'You will no longer receive reactivation emails from ' + biz + '.');\nif (s(c.consent_status) === 'UNSUBSCRIBED') return [{ json: { kind: 'SHOW', html: done } }];\nif (req.method !== 'POST') {\n  const form = '<form method=\"POST\" action=\"/webhook/unsubscribe?t=' + token + '\"><button type=\"submit\">Confirm unsubscribe</button></form>';\n  return [{ json: { kind: 'SHOW', html: page('Unsubscribe', 'Click the button to stop receiving emails from ' + biz + '.', form) } }];\n}\nconst now = nowIso();\nreturn [{ json: { kind: 'DO', html: done,\n  customerUpdate: { customer_id: s(c.customer_id), consent_status: 'UNSUBSCRIBED', campaign_status: 'STOPPED', stop_reason: 'UNSUBSCRIBED', updated_at: now },\n  logRow: mkLog({ customer_id: s(c.customer_id), email: s(c.email), event_type: 'UNSUBSCRIBED', campaign_id: s(S.campaign_id), status: 'SUCCESS', metadata: 'Unsubscribed via link' }) } }];\n"
+      },
+      "id": "68713ba6-650e-40e2-852a-6b9a2554dcc6",
+      "name": "Handle Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "627d7fca-ff61-4e0f-adef-e3d9a43488c2",
+              "leftValue": "={{ $json.kind === 'DO' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "56ec9c5b-64cc-493c-beee-eb8850bfa8c7",
+      "name": "Do Unsubscribe?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1300,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: $('Handle Request').first().json.customerUpdate }];"
+      },
+      "id": "dad98dea-74eb-44e4-b3e4-72adae75c2d9",
+      "name": "Emit Customer Update",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1560,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "sheet",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Customers",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [
+            "customer_id"
+          ],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "id": "bf67a1d0-1e5c-4d7a-a686-c1114735a4f0",
+      "name": "Update Customer (Unsubscribe)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1820,
+        0
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "REPLACE_ME",
+          "name": "Google Service Account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: $('Handle Request').first().json.logRow }];"
+      },
+      "id": "5ad70193-1dca-47c8-b1af-de9db6469b1a",
+      "name": "Emit Unsubscribe Log",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2080,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Campaign_Log",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "id": "6b824b78-0deb-417c-b9c9-910cc813e6b2",
+      "name": "Append Log (Unsubscribed)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        2340,
+        0
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "REPLACE_ME",
+          "name": "Google Service Account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $('Handle Request').first().json.html }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "id": "76b6cce2-37b1-4e63-890d-0940b9a5bca4",
+      "name": "Respond Page",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1560,
+        190
+      ]
+    },
+    {
+      "parameters": {
+        "content": "WF8 - Unsubscribe Handler\n\nAfter import:\n1. Every Google Sheets node: pick your service-account credential.\n2. 'Get Settings': choose 'WF0 - Get Settings'.\n3. Activate.\n\nPublic link used in emails:\nhttps://YOUR-NGROK-DOMAIN/webhook/unsubscribe?t=TOKEN\n\nGET shows a confirm page. Only the POST (button) unsubscribes, so email scanners cannot unsubscribe people by accident.",
+        "height": 420,
+        "width": 320
+      },
+      "id": "32267891-0827-4782-9bee-cc32db18c27b",
+      "name": "Setup Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -380,
+        -40
+      ]
+    }
+  ],
+  "connections": {
+    "Unsubscribe GET": {
+      "main": [
+        [
+          {
+            "node": "Tag GET",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Unsubscribe POST": {
+      "main": [
+        [
+          {
+            "node": "Tag POST",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tag GET": {
+      "main": [
+        [
+          {
+            "node": "Get Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tag POST": {
+      "main": [
+        [
+          {
+            "node": "Get Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Settings": {
+      "main": [
+        [
+          {
+            "node": "Read Customers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Customers": {
+      "main": [
+        [
+          {
+            "node": "Handle Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handle Request": {
+      "main": [
+        [
+          {
+            "node": "Do Unsubscribe?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Do Unsubscribe?": {
+      "main": [
+        [
+          {
+            "node": "Emit Customer Update",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Emit Customer Update": {
+      "main": [
+        [
+          {
+            "node": "Update Customer (Unsubscribe)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Customer (Unsubscribe)": {
+      "main": [
+        [
+          {
+            "node": "Emit Unsubscribe Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Emit Unsubscribe Log": {
+      "main": [
+        [
+          {
+            "node": "Append Log (Unsubscribed)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append Log (Unsubscribed)": {
+      "main": [
+        [
+          {
+            "node": "Respond Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Africa/Lagos"
+  },
+  "pinData": {}
+}

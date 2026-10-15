@@ -1,0 +1,7 @@
+customer_id,first_name,last_name,email,phone,last_service_date,last_service,total_spend,customer_status,consent_status,campaign_status,booking_status,payment_status,last_contacted_at,follow_up_count,last_email_event,booking_date,booking_id,amount,notes,created_at,updated_at,unsubscribe_token,stop_reason
+CUS-0001,Alex,Rivera,test+cus0001@example.com,,2026-03-28,Deep Home Cleaning,,ACTIVE,OPTED_IN,NOT_STARTED,NOT_BOOKED,NOT_REQUIRED,,0,,,,,"ELIGIBLE: old service, opted in",,,,
+CUS-0002,Sam,Patel,test+cus0002@example.com,,2026-09-14,Home Cleaning,,ACTIVE,OPTED_IN,NOT_STARTED,NOT_BOOKED,NOT_REQUIRED,,0,,,,,NOT ELIGIBLE: served recently,,,,
+CUS-0003,Jordan,Lee,test+cus0003@example.com,,2026-03-08,Window Cleaning,,ACTIVE,UNSUBSCRIBED,STOPPED,NOT_BOOKED,NOT_REQUIRED,,0,,,,,NOT ELIGIBLE: unsubscribed,,,,UNSUBSCRIBED
+CUS-0004,Casey,Brown,not-an-email,,2026-03-18,Carpet Cleaning,,ACTIVE,OPTED_IN,NOT_STARTED,NOT_BOOKED,NOT_REQUIRED,,0,,,,,DATA_QUALITY: invalid email -> Errors sheet,,,,
+CUS-0005,Morgan,Diaz,test+cus0005@example.com,,2026-02-16,Home Cleaning,,ACTIVE,OPTED_IN,NOT_STARTED,NOT_BOOKED,NOT_REQUIRED,,0,,,,,"ELIGIBLE: oldest, goes first",,,,
+CUS-0006,Taylor,Kim,test+cus0006@example.com,,2026-04-07,Deep Home Cleaning,,ACTIVE,OPTED_IN,STOPPED,BOOKED,NOT_REQUIRED,,0,,,cal_demo_uid,,NOT ELIGIBLE: already booked,,,,BOOKED

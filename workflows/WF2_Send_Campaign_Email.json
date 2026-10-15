@@ -1,0 +1,1111 @@
+{
+  "name": "WF2 - Send Campaign Email",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "id": "aeeb3ce4-d1cf-4505-a7e8-df709d3831bc",
+      "name": "Start",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "",
+          "mode": "list",
+          "cachedResultName": "WF0 - Get Settings"
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "08254170-e2fc-43da-85c4-bdccfc0c22b5",
+      "name": "Get Settings",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        260,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Customers",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "0aee1f42-db48-431e-9c07-31f053d7ece5",
+      "name": "Read Customers",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        520,
+        0
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "REPLACE_ME",
+          "name": "Google Service Account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Campaign_Log",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "53de0b38-f2aa-4432-8ff9-28da92e9b763",
+      "name": "Read Campaign_Log",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        780,
+        0
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "REPLACE_ME",
+          "name": "Google Service Account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst TZ = 'Africa/Lagos';\nconst s = (v) => String(v === null || v === undefined ? '' : v).trim();\nconst todayStr = () => new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date());\nconst nowIso = () => new Date(Date.now() + 3600000).toISOString().replace(/\\.\\d{3}Z$/, '+01:00');\nconst uid = (p) => p + '-' + Date.now().toString(36).toUpperCase() + '-' + Math.random().toString(36).slice(2, 7).toUpperCase();\nconst isEmail = (e) => /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(s(e));\nconst isDate = (d) => /^\\d{4}-\\d{2}-\\d{2}$/.test(d) && !isNaN(Date.parse(d + 'T00:00:00Z'));\nconst daysBetween = (a, b) => Math.floor((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000);\nconst mkLog = (o) => Object.assign({ event_id: uid('EVT'), customer_id: '', email: '', event_type: '', campaign_id: '', email_sequence: '', message_id: '', booking_id: '', timestamp: nowIso(), status: '', error: '', metadata: '' }, o);\nconst mkErr = (o) => Object.assign({ error_id: uid('ERR'), workflow: '', customer_id: '', node: '', error_type: 'UNKNOWN', message: '', timestamp: nowIso(), retry_count: 0, resolved: 'FALSE', execution_id: String($execution.id) }, o);\n\nfunction sendBlocked(log, cust, camp, seq) {\n  let started = false, fails = 0;\n  for (const l of log) {\n    if (s(l.customer_id) !== cust || s(l.campaign_id) !== camp || s(l.email_sequence) !== seq) continue;\n    if (l.event_type === 'EMAIL_SEND_STARTED') started = true;\n    else if (l.event_type === 'EMAIL_FAILED') { started = false; fails++; }\n  }\n  return { blocked: started, fails };\n}\n\nconst IN = $('Start').first().json;\nconst S = $('Get Settings').first().json.settings;\nconst custId = s(IN.customer_id);\nconst seq = s(IN.email_sequence) || 'INITIAL';\nconst customers = $('Read Customers').all().map(i => i.json);\nconst log = $input.all().map(i => i.json).filter(l => l.event_id);\nconst matches = customers.filter(c => s(c.customer_id) === custId);\nconst camp = s(S.campaign_id);\nconst fail = (reason) => [{ json: { ok: false, reason, custId, seq, logRow: mkLog({\n  customer_id: custId, email: s(matches[0] && matches[0].email), event_type: 'SKIPPED', campaign_id: camp,\n  email_sequence: seq, status: 'SKIPPED', metadata: reason }) } }];\n\nif (!custId) return fail('MISSING_CUSTOMER_ID');\nif (S.campaign_enabled !== 'ON') return fail('CAMPAIGN_OFF');\nif (!isEmail(S.sender_email)) return fail('NO_SENDER_EMAIL');\nif (!/^https:\\/\\//i.test(s(S.booking_link))) return fail('BOOKING_LINK_INVALID');\nif (matches.length !== 1) return fail(matches.length === 0 ? 'CUSTOMER_NOT_FOUND' : 'DUPLICATE_CUSTOMER_ID');\nconst c = matches[0];\nif (!isEmail(c.email)) return fail('INVALID_EMAIL');\nif (s(c.consent_status) !== 'OPTED_IN') return fail('NOT_OPTED_IN');\nif (s(c.booking_status) === 'BOOKED') return fail('ALREADY_BOOKED');\nconst cs = s(c.campaign_status) || 'NOT_STARTED';\nif (cs === 'STOPPED' || cs === 'COMPLETED') return fail('CAMPAIGN_' + cs);\nif (!s(c.unsubscribe_token)) return fail('NO_UNSUBSCRIBE_TOKEN');\nconst followCount = Number(c.follow_up_count) || 0;\nconst m = seq.match(/^FOLLOWUP-(\\d+)$/);\nif (seq === 'INITIAL') {\n  if (!['NOT_STARTED', 'ELIGIBLE'].includes(cs)) return fail('WRONG_STATE_FOR_INITIAL');\n} else if (m) {\n  const n = Number(m[1]);\n  if (!['CONTACTED', 'FOLLOW_UP_PENDING'].includes(cs)) return fail('WRONG_STATE_FOR_FOLLOWUP');\n  if (n > S.max_followups) return fail('MAX_FOLLOWUPS_REACHED');\n  if (followCount !== n - 1) return fail('SEQUENCE_MISMATCH');\n  const lcDate = s(c.last_contacted_at).slice(0, 10);\n  if (!isDate(lcDate)) return fail('NO_LAST_CONTACTED_AT');\n  if (daysBetween(lcDate, todayStr()) < S.days_between_followups) return fail('TOO_SOON');\n} else {\n  return fail('BAD_SEQUENCE');\n}\nconst b = sendBlocked(log, custId, camp, seq);\nif (b.blocked) return fail('DUPLICATE_SEND_KEY');\nif (b.fails >= 3) return fail('RETRY_LIMIT');\n\nconst isFollow = seq !== 'INITIAL';\nconst service = s(c.last_service) || s(S.default_service);\nconst facts = [\n  'Customer first name: ' + (s(c.first_name) || '(unknown - greet with \"Hi there\")'),\n  'Previous service: ' + (service || '(unknown - do not mention a specific service)'),\n  'Date of last service: ' + s(c.last_service_date),\n  'Business name: ' + s(S.business_name),\n  'Tone: ' + (s(S.email_tone) || 'friendly and professional'),\n  'Current offer: ' + (s(S.current_offer) || '(none - do not mention any offer)'),\n  'Email type: ' + (isFollow ? 'Follow-up number ' + m[1] : 'First reactivation email')\n].join('\\n');\nlet system = 'You are writing a short customer reactivation email for a service business.\\n\\nUse ONLY the information provided.\\n\\nDo not invent:\\n- prices\\n- promotions\\n- services\\n- guarantees\\n- dates\\n- URLs\\n- customer history\\n\\nKeep the email natural and concise (under 120 words).\\nDo not mention automation or AI.\\nPut the exact text {{BOOKING_LINK}} on its own line once. Do not write any other links.\\nSign off with the business name.\\n\\nReturn JSON only:\\n{\"subject\": \"...\", \"body\": \"...\"}';\nif (isFollow) system += '\\n\\nThis is follow-up number ' + m[1] + '. Write a shorter, gentler nudge. Do not pretend the customer replied or refer to earlier replies.';\nconst aiRequest = { model: S.openai_model || 'gpt-4o-mini', n: 2, temperature: 0.7, max_tokens: 400,\n  response_format: { type: 'json_object' },\n  messages: [{ role: 'system', content: system }, { role: 'user', content: facts }] };\nreturn [{ json: { ok: true, custId, seq, settings: S, customer: c, aiRequest } }];\n"
+      },
+      "id": "d948077e-13fe-48e4-98c0-fb37b2ab5168",
+      "name": "Pre-send Checks",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "85ea8f10-0a0a-462a-b99d-92db32803aea",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "a411f459-dc2b-4eed-a551-e535794601b3",
+      "name": "Checks Passed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1300,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: $('Pre-send Checks').first().json.logRow }];"
+      },
+      "id": "3543ae96-578a-4f42-9e8b-8a66f5e8b2b0",
+      "name": "Emit Skip Log",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1560,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Campaign_Log",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "id": "874c7281-8d06-4f43-8bdf-b9d4c2a4358e",
+      "name": "Append Log (Skipped)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1820,
+        0
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "REPLACE_ME",
+          "name": "Google Service Account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst p = $('Pre-send Checks').first().json;\nreturn [{ json: { result: 'SKIPPED', customer_id: p.custId, email_sequence: p.seq, reason: p.reason } }];\n"
+      },
+      "id": "17b03494-2b95-4139-ba3c-5cd4e35c5ae7",
+      "name": "Result: Skipped",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2080,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.aiRequest) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "7556b49c-a467-42bf-9847-52002261be31",
+      "name": "OpenAI Generate Email",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1560,
+        190
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "REPLACE_ME",
+          "name": "OpenAI"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst TZ = 'Africa/Lagos';\nconst s = (v) => String(v === null || v === undefined ? '' : v).trim();\nconst todayStr = () => new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date());\nconst nowIso = () => new Date(Date.now() + 3600000).toISOString().replace(/\\.\\d{3}Z$/, '+01:00');\nconst uid = (p) => p + '-' + Date.now().toString(36).toUpperCase() + '-' + Math.random().toString(36).slice(2, 7).toUpperCase();\nconst isEmail = (e) => /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(s(e));\nconst isDate = (d) => /^\\d{4}-\\d{2}-\\d{2}$/.test(d) && !isNaN(Date.parse(d + 'T00:00:00Z'));\nconst daysBetween = (a, b) => Math.floor((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000);\nconst mkLog = (o) => Object.assign({ event_id: uid('EVT'), customer_id: '', email: '', event_type: '', campaign_id: '', email_sequence: '', message_id: '', booking_id: '', timestamp: nowIso(), status: '', error: '', metadata: '' }, o);\nconst mkErr = (o) => Object.assign({ error_id: uid('ERR'), workflow: '', customer_id: '', node: '', error_type: 'UNKNOWN', message: '', timestamp: nowIso(), retry_count: 0, resolved: 'FALSE', execution_id: String($execution.id) }, o);\n\nconst P = $('Pre-send Checks').first().json;\nconst S = P.settings, c = P.customer, seq = P.seq, custId = P.custId;\nconst camp = s(S.campaign_id), email = s(c.email);\nconst resp = $input.first().json || {};\nconst cands = [];\nif (Array.isArray(resp.choices)) for (const ch of resp.choices) cands.push((ch && ch.message && ch.message.content) || '');\nlet apiError = '';\nif (resp.error) apiError = (typeof resp.error === 'string' ? resp.error : (resp.error.message || JSON.stringify(resp.error))).slice(0, 300);\nconst inputsText = [S.current_offer, S.business_name, S.default_service, c.last_service, c.first_name, S.email_tone].map(x => s(x).toLowerCase()).join(' ');\nconst otherNames = $('Read Customers').all().map(i => s(i.json.first_name))\n  .filter(n => n.length >= 3 && n.toLowerCase() !== s(c.first_name).toLowerCase() && !inputsText.includes(n.toLowerCase()));\n\nfunction validate(raw) {\n  let o;\n  try { o = JSON.parse(String(raw).replace(/^```(?:json)?\\s*|\\s*```$/g, '').trim()); } catch (e) { return { ok: false, reason: 'BAD_JSON' }; }\n  const subject = typeof o.subject === 'string' ? o.subject.trim() : '';\n  const body = typeof o.body === 'string' ? o.body.trim() : '';\n  if (!subject || subject.length > 120) return { ok: false, reason: 'BAD_SUBJECT' };\n  if (body.length < 20 || body.length > 1500) return { ok: false, reason: 'BAD_BODY_LENGTH' };\n  if ((body.match(/\\{\\{BOOKING_LINK\\}\\}/g) || []).length !== 1) return { ok: false, reason: 'BOOKING_PLACEHOLDER' };\n  if (subject.includes('{{')) return { ok: false, reason: 'PLACEHOLDER_IN_SUBJECT' };\n  const text = subject + '\\n' + body.replace('{{BOOKING_LINK}}', '');\n  const low = text.toLowerCase();\n  if (/https?:\\/\\/|www\\.|\\b[a-z0-9-]+\\.(com|net|org|ng|io|co|info|biz)\\b/i.test(text)) return { ok: false, reason: 'URL_FOUND' };\n  if (/[$\\u20AC\\u00A3\\u20A6]|%/.test(text)) return { ok: false, reason: 'CURRENCY_OR_PERCENT' };\n  for (const w of ['discount', 'free', 'guarantee']) if (low.includes(w) && !inputsText.includes(w)) return { ok: false, reason: 'BANNED_WORD_' + w.toUpperCase() };\n  if (/\\boff\\b/i.test(text) && !/\\boff\\b/.test(inputsText)) return { ok: false, reason: 'BANNED_WORD_OFF' };\n  if (/\\bAI\\b/.test(text) || /automat(ed|ion|ic)|artificial intelligence/i.test(text)) return { ok: false, reason: 'MENTIONS_AI' };\n  for (const n of otherNames) if (new RegExp('\\\\b' + n.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&') + '\\\\b', 'i').test(text)) return { ok: false, reason: 'OTHER_CUSTOMER_NAME' };\n  return { ok: true, subject, body };\n}\n\nlet good = null;\nconst reasons = [];\nfor (const raw of cands) { const v = validate(raw); if (v.ok) { good = v; break; } reasons.push(v.reason); }\nif (!good) {\n  const reason = apiError ? 'OPENAI_API_ERROR' : (reasons[0] || 'NO_CANDIDATES');\n  return [{ json: { valid: false, reason, custId, seq,\n    logRow: mkLog({ customer_id: custId, email, event_type: 'AI_INVALID_OUTPUT', campaign_id: camp, email_sequence: seq, status: 'FAILED', error: apiError || reason, metadata: reasons.join(',') }),\n    errorRow: mkErr({ workflow: 'WF2 - Send Campaign Email', customer_id: custId, node: 'OpenAI Generate Email', error_type: apiError ? 'API_ERROR' : 'AI_INVALID_OUTPUT', message: apiError || reason }) } }];\n}\nconst base = s(S.booking_link);\nconst name = [s(c.first_name), s(c.last_name)].filter(Boolean).join(' ');\nconst link = base + (base.includes('?') ? '&' : '?') + 'name=' + encodeURIComponent(name) + '&email=' + encodeURIComponent(email) + '&customer_id=' + encodeURIComponent(custId);\nconst unsub = s(S.public_base_url).replace(/\\/+$/, '') + '/webhook/unsubscribe?t=' + encodeURIComponent(s(c.unsubscribe_token));\nconst text = good.body.replace('{{BOOKING_LINK}}', link) + '\\n\\n--\\n' + s(S.business_name) + '\\nDon\\'t want these emails? Unsubscribe here: ' + unsub;\nreturn [{ json: { valid: true, custId, seq, camp, email, maxFollowups: S.max_followups,\n  fromEmail: s(S.sender_name) + ' <' + s(S.sender_email) + '>', to: email, replyTo: s(S.business_email) || s(S.sender_email),\n  subject: good.subject, text,\n  startedRow: mkLog({ customer_id: custId, email, event_type: 'EMAIL_SEND_STARTED', campaign_id: camp, email_sequence: seq, status: 'STARTED' }) } }];\n"
+      },
+      "id": "e459f308-da02-4073-a728-7873c07bc8d4",
+      "name": "Validate AI & Build Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1820,
+        190
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "513df819-f0ef-4398-905e-a499a2a86ba6",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "b65a28d3-8648-4434-8105-6605b0a4f9ee",
+      "name": "AI Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2080,
+        190
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: $('Validate AI & Build Email').first().json.logRow }];"
+      },
+      "id": "2af921f7-6103-4824-9d00-2bdf77e704d8",
+      "name": "Emit AI Invalid Log",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2340,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Campaign_Log",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "id": "f87dde41-2128-4324-948f-aeccca2c258e",
+      "name": "Append Log (AI Invalid)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        2600,
+        0
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "REPLACE_ME",
+          "name": "Google Service Account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: $('Validate AI & Build Email').first().json.errorRow }];"
+      },
+      "id": "2f77c28b-02cb-4ef9-a2fe-d24447a147cb",
+      "name": "Emit AI Error Row",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2860,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Errors",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "id": "a239336f-b6ca-4a86-8436-53875631e807",
+      "name": "Append Errors (AI)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        3120,
+        0
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "REPLACE_ME",
+          "name": "Google Service Account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst v = $('Validate AI & Build Email').first().json;\nreturn [{ json: { result: 'AI_INVALID', customer_id: v.custId, email_sequence: v.seq, reason: v.reason } }];\n"
+      },
+      "id": "0a999452-97fb-44c9-b0d4-44eeda03ea5a",
+      "name": "Result: AI Invalid",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3380,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: $('Validate AI & Build Email').first().json.startedRow }];"
+      },
+      "id": "a0b5ce23-7b73-4770-a8c9-32ca813134ea",
+      "name": "Emit Started Row",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2340,
+        190
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Campaign_Log",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "id": "37fab92d-a450-4be8-b881-fd8d1a12143b",
+      "name": "Append Log (Started)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        2600,
+        190
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "REPLACE_ME",
+          "name": "Google Service Account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $('Validate AI & Build Email').first().json.fromEmail }}",
+        "toEmail": "={{ $('Validate AI & Build Email').first().json.to }}",
+        "subject": "={{ $('Validate AI & Build Email').first().json.subject }}",
+        "emailFormat": "text",
+        "text": "={{ $('Validate AI & Build Email').first().json.text }}",
+        "options": {
+          "appendAttribution": false,
+          "replyTo": "={{ $('Validate AI & Build Email').first().json.replyTo }}"
+        }
+      },
+      "id": "e6b2da27-3382-478f-8b9c-10e15c671978",
+      "name": "Send Email (Gmail SMTP)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        2860,
+        190
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "REPLACE_ME",
+          "name": "Gmail SMTP"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst TZ = 'Africa/Lagos';\nconst s = (v) => String(v === null || v === undefined ? '' : v).trim();\nconst todayStr = () => new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date());\nconst nowIso = () => new Date(Date.now() + 3600000).toISOString().replace(/\\.\\d{3}Z$/, '+01:00');\nconst uid = (p) => p + '-' + Date.now().toString(36).toUpperCase() + '-' + Math.random().toString(36).slice(2, 7).toUpperCase();\nconst isEmail = (e) => /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(s(e));\nconst isDate = (d) => /^\\d{4}-\\d{2}-\\d{2}$/.test(d) && !isNaN(Date.parse(d + 'T00:00:00Z'));\nconst daysBetween = (a, b) => Math.floor((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000);\nconst mkLog = (o) => Object.assign({ event_id: uid('EVT'), customer_id: '', email: '', event_type: '', campaign_id: '', email_sequence: '', message_id: '', booking_id: '', timestamp: nowIso(), status: '', error: '', metadata: '' }, o);\nconst mkErr = (o) => Object.assign({ error_id: uid('ERR'), workflow: '', customer_id: '', node: '', error_type: 'UNKNOWN', message: '', timestamp: nowIso(), retry_count: 0, resolved: 'FALSE', execution_id: String($execution.id) }, o);\n\nconst V = $('Validate AI & Build Email').first().json;\nconst r = $input.first().json || {};\nconst errText = r.error ? (typeof r.error === 'string' ? r.error : (r.error.message || JSON.stringify(r.error))) : '';\nconst sent = !errText;\nconst now = nowIso();\nconst n = V.seq === 'INITIAL' ? 0 : Number(V.seq.split('-')[1]);\nconst status = n >= V.maxFollowups ? 'COMPLETED' : (n === 0 ? 'CONTACTED' : 'FOLLOW_UP_PENDING');\nconst base = { customer_id: V.custId, email: V.email, campaign_id: V.camp, email_sequence: V.seq };\nlet logRow, customerUpdate = null, errorRow = null;\nif (sent) {\n  logRow = mkLog(Object.assign({}, base, { event_type: 'EMAIL_SENT', message_id: s(r.messageId), status: 'SUCCESS' }));\n  customerUpdate = { customer_id: V.custId, campaign_status: status, follow_up_count: n, last_contacted_at: now, updated_at: now };\n} else {\n  logRow = mkLog(Object.assign({}, base, { event_type: 'EMAIL_FAILED', status: 'FAILED', error: errText.slice(0, 300) }));\n  errorRow = mkErr({ workflow: 'WF2 - Send Campaign Email', customer_id: V.custId, node: 'Send Email (Gmail SMTP)', error_type: 'API_ERROR', message: errText.slice(0, 300), retry_count: 3 });\n}\nreturn [{ json: { sent, logRow, customerUpdate, errorRow, result: { result: sent ? 'SENT' : 'FAILED', customer_id: V.custId, email_sequence: V.seq, error: errText } } }];\n"
+      },
+      "id": "5fcf9965-259f-4aef-b11d-d18849cb0f4c",
+      "name": "Build Send Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3120,
+        190
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: $('Build Send Result').first().json.logRow }];"
+      },
+      "id": "82af9eaf-2fa8-4e7d-9170-37697d04c98d",
+      "name": "Emit Send Log",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3380,
+        190
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Campaign_Log",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "id": "ad2fff36-6ee6-43da-af27-f872ac560576",
+      "name": "Append Log (Send Result)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        3640,
+        0
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "REPLACE_ME",
+          "name": "Google Service Account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "0d4d35cf-48f6-4891-84c3-c47be2b9eb30",
+              "leftValue": "={{ $('Build Send Result').first().json.sent }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "2df08ef1-618d-42b5-8b5d-4d3930c2a32a",
+      "name": "Sent OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3900,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: $('Build Send Result').first().json.customerUpdate }];"
+      },
+      "id": "ff7edccc-e83b-4380-919f-4a3d4354fceb",
+      "name": "Emit Customer Update",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4160,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "sheet",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Customers",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [
+            "customer_id"
+          ],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "id": "2ef926ed-0ce2-41fa-a629-905b6f054611",
+      "name": "Update Customer",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        4420,
+        0
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "REPLACE_ME",
+          "name": "Google Service Account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: $('Build Send Result').first().json.result }];"
+      },
+      "id": "01ba5608-5ed0-4436-9a55-baadbbf9093e",
+      "name": "Result: Sent",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4680,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: $('Build Send Result').first().json.errorRow }];"
+      },
+      "id": "cb9cec7a-5bd5-4ebc-bec6-0069726da9e8",
+      "name": "Emit Send Error Row",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4160,
+        190
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Errors",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "id": "b6ac4f8d-7a97-4a00-9536-0b5a32d79676",
+      "name": "Append Errors (Send)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        4420,
+        190
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "REPLACE_ME",
+          "name": "Google Service Account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: $('Build Send Result').first().json.result }];"
+      },
+      "id": "c1e5fdf5-0e03-436d-8b34-0f1cff7e2182",
+      "name": "Result: Failed",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4680,
+        190
+      ]
+    },
+    {
+      "parameters": {
+        "content": "WF2 - Send Campaign Email\n\nCalled by WF1 and WF5 with customer_id + email_sequence.\n\nAfter import:\n1. Every Google Sheets node: pick your service-account credential.\n2. 'Get Settings' node: choose 'WF0 - Get Settings'.\n3. 'OpenAI Generate Email': pick your OpenAI credential.\n4. 'Send Email (Gmail SMTP)': pick your Gmail SMTP credential.\n5. Do NOT activate; it only runs when called.",
+        "height": 420,
+        "width": 320
+      },
+      "id": "75215260-b7ed-4ca3-aafa-de5694a7591c",
+      "name": "Setup Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -380,
+        -40
+      ]
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "Get Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Settings": {
+      "main": [
+        [
+          {
+            "node": "Read Customers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Customers": {
+      "main": [
+        [
+          {
+            "node": "Read Campaign_Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Campaign_Log": {
+      "main": [
+        [
+          {
+            "node": "Pre-send Checks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pre-send Checks": {
+      "main": [
+        [
+          {
+            "node": "Checks Passed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Checks Passed?": {
+      "main": [
+        [
+          {
+            "node": "OpenAI Generate Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Emit Skip Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Emit Skip Log": {
+      "main": [
+        [
+          {
+            "node": "Append Log (Skipped)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append Log (Skipped)": {
+      "main": [
+        [
+          {
+            "node": "Result: Skipped",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Generate Email": {
+      "main": [
+        [
+          {
+            "node": "Validate AI & Build Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate AI & Build Email": {
+      "main": [
+        [
+          {
+            "node": "AI Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Valid?": {
+      "main": [
+        [
+          {
+            "node": "Emit Started Row",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Emit AI Invalid Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Emit AI Invalid Log": {
+      "main": [
+        [
+          {
+            "node": "Append Log (AI Invalid)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append Log (AI Invalid)": {
+      "main": [
+        [
+          {
+            "node": "Emit AI Error Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Emit AI Error Row": {
+      "main": [
+        [
+          {
+            "node": "Append Errors (AI)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append Errors (AI)": {
+      "main": [
+        [
+          {
+            "node": "Result: AI Invalid",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Emit Started Row": {
+      "main": [
+        [
+          {
+            "node": "Append Log (Started)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append Log (Started)": {
+      "main": [
+        [
+          {
+            "node": "Send Email (Gmail SMTP)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Email (Gmail SMTP)": {
+      "main": [
+        [
+          {
+            "node": "Build Send Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Send Result": {
+      "main": [
+        [
+          {
+            "node": "Emit Send Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Emit Send Log": {
+      "main": [
+        [
+          {
+            "node": "Append Log (Send Result)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append Log (Send Result)": {
+      "main": [
+        [
+          {
+            "node": "Sent OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sent OK?": {
+      "main": [
+        [
+          {
+            "node": "Emit Customer Update",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Emit Send Error Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Emit Customer Update": {
+      "main": [
+        [
+          {
+            "node": "Update Customer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Customer": {
+      "main": [
+        [
+          {
+            "node": "Result: Sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Emit Send Error Row": {
+      "main": [
+        [
+          {
+            "node": "Append Errors (Send)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append Errors (Send)": {
+      "main": [
+        [
+          {
+            "node": "Result: Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Africa/Lagos"
+  },
+  "pinData": {}
+}

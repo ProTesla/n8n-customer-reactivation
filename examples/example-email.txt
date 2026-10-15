@@ -1,0 +1,20 @@
+From:     Demo Home Services <your.gmail@gmail.com>
+Reply-To: hello@example.com
+To:       test+cus0001@example.com
+Subject:  It's been a while since your deep home cleaning
+
+Hi Alex,
+
+It's been a little while since your last deep home cleaning with Demo Home Services.
+If you're ready for another one, we'd be happy to help.
+
+You can choose a convenient time here:
+
+https://cal.com/YOUR-USERNAME/YOUR-EVENT?name=Alex%20Rivera&email=test%2Bcus0001%40example.com&customer_id=CUS-0001
+
+Best,
+Demo Home Services
+
+--
+Demo Home Services
+Don't want these emails? Unsubscribe here: https://YOUR-NGROK-DOMAIN/webhook/unsubscribe?t=0f3a9c...(32 random hex characters)

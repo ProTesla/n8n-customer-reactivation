@@ -1,0 +1,1 @@
+customer_id,first_name,last_name,email,phone,last_service_date,last_service,total_spend,customer_status,consent_status,campaign_status,booking_status,payment_status,last_contacted_at,follow_up_count,last_email_event,booking_date,booking_id,amount,notes,created_at,updated_at,unsubscribe_token,stop_reason

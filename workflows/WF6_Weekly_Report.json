@@ -1,0 +1,378 @@
+{
+  "name": "WF6 - Weekly Report",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "weeksInterval": 1,
+              "triggerAtDay": [
+                1
+              ],
+              "triggerAtHour": 8
+            }
+          ]
+        }
+      },
+      "id": "267080bc-8171-4dbc-93b4-39c2640b7250",
+      "name": "Weekly Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "2d07bfa2-78c3-406a-b004-eb9ad83b9356",
+      "name": "Manual Run",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        190
+      ]
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "",
+          "mode": "list",
+          "cachedResultName": "WF0 - Get Settings"
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "37d8cdfd-85ae-4989-86ee-b4dad5632bf4",
+      "name": "Get Settings",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        260,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Campaign_Log",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "15500ebc-7aa6-4bf2-9846-f1c4b8bcee61",
+      "name": "Read Campaign_Log",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        520,
+        0
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "REPLACE_ME",
+          "name": "Google Service Account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst TZ = 'Africa/Lagos';\nconst s = (v) => String(v === null || v === undefined ? '' : v).trim();\nconst todayStr = () => new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date());\nconst nowIso = () => new Date(Date.now() + 3600000).toISOString().replace(/\\.\\d{3}Z$/, '+01:00');\nconst uid = (p) => p + '-' + Date.now().toString(36).toUpperCase() + '-' + Math.random().toString(36).slice(2, 7).toUpperCase();\nconst isEmail = (e) => /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(s(e));\nconst isDate = (d) => /^\\d{4}-\\d{2}-\\d{2}$/.test(d) && !isNaN(Date.parse(d + 'T00:00:00Z'));\nconst daysBetween = (a, b) => Math.floor((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000);\nconst mkLog = (o) => Object.assign({ event_id: uid('EVT'), customer_id: '', email: '', event_type: '', campaign_id: '', email_sequence: '', message_id: '', booking_id: '', timestamp: nowIso(), status: '', error: '', metadata: '' }, o);\nconst mkErr = (o) => Object.assign({ error_id: uid('ERR'), workflow: '', customer_id: '', node: '', error_type: 'UNKNOWN', message: '', timestamp: nowIso(), retry_count: 0, resolved: 'FALSE', execution_id: String($execution.id) }, o);\n\nconst S = $('Get Settings').first().json.settings;\nconst camp = s(S.campaign_id);\nconst log = $input.all().map(i => i.json).filter(l => l.event_id && s(l.campaign_id) === camp);\nconst uniq = (fn) => new Set(log.filter(fn).map(l => s(l.customer_id)).filter(Boolean)).size;\nconst sent = log.filter(l => l.event_type === 'EMAIL_SENT');\nconst contacted = new Set(sent.filter(l => s(l.email_sequence) === 'INITIAL').map(l => s(l.customer_id))).size;\nconst followups = sent.filter(l => s(l.email_sequence) !== 'INITIAL').length;\nconst eligible = uniq(l => l.event_type === 'ELIGIBLE_MARKED');\nconst delivered = uniq(l => l.event_type === 'EMAIL_DELIVERED');\nconst clicked = uniq(l => l.event_type === 'EMAIL_CLICKED');\nconst cancelled = uniq(l => l.event_type === 'BOOKING_CANCELLED');\nconst unsubscribed = uniq(l => l.event_type === 'UNSUBSCRIBED');\nconst complained = uniq(l => l.event_type === 'EMAIL_COMPLAINED');\nconst bounced = uniq(l => l.event_type === 'EMAIL_BOUNCED');\nconst unmatched = log.filter(l => l.event_type === 'BOOKING_UNMATCHED').length;\nconst state = {};\nfor (const l of log) {\n  const k = s(l.customer_id) + '|' + s(l.email_sequence);\n  if (l.event_type === 'EMAIL_FAILED') state[k] = 'F';\n  else if (l.event_type === 'EMAIL_SENT') state[k] = 'S';\n}\nconst failed = new Set(Object.keys(state).filter(k => state[k] === 'F').map(k => k.split('|')[0])).size;\nconst firstSent = {};\nsent.forEach(l => { const c = s(l.customer_id); const t = Date.parse(s(l.timestamp)); if (!isNaN(t) && (firstSent[c] === undefined || t < firstSent[c])) firstSent[c] = t; });\nconst booked = new Set(log.filter(l => l.event_type === 'BOOKING_CREATED' && firstSent[s(l.customer_id)] !== undefined && Date.parse(s(l.timestamp)) > firstSent[s(l.customer_id)]).map(l => s(l.customer_id))).size;\nconst denom = delivered > 0 ? delivered : contacted;\nconst rate = denom ? (booked / denom * 100).toFixed(1) + '%' : '0.0%';\nconst today = todayStr();\nconst lines = [\n  'CUSTOMER REACTIVATION REPORT',\n  'Campaign: ' + camp + '   Date: ' + today, '',\n  'Customers eligible: ' + eligible,\n  'Customers contacted: ' + contacted,\n  'Follow-up emails sent: ' + followups,\n  'Bookings from this campaign: ' + booked,\n  'Booking rate: ' + rate,\n  'Cancelled bookings: ' + cancelled,\n  'Unsubscribed: ' + unsubscribed,\n  'Emails that failed to send: ' + failed\n];\nif (delivered > 0) lines.push('Delivered: ' + delivered + '   Bounced: ' + bounced + '   Complaints: ' + complained);\nif (unmatched > 0) lines.push('', 'Bookings that could not be matched to a customer: ' + unmatched + ' (please check)');\nif (s(S.report_sheet_url)) lines.push('', 'Detailed results: ' + s(S.report_sheet_url));\nconst resultsRow = { campaign_id: camp, date: today, eligible, contacted, followups_sent: followups, delivered, clicked, booked, cancelled, unsubscribed, complained, bounced, failed, revenue: 0 };\nreturn [{ json: { resultsRow, subject: 'Weekly customer reactivation report - ' + s(S.business_name), text: lines.join('\\n'), to: s(S.owner_email), camp } }];\n"
+      },
+      "id": "a97912e2-33fc-40ec-b520-b2ed0a77f100",
+      "name": "Compute Stats",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        780,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: $('Compute Stats').first().json.resultsRow }];"
+      },
+      "id": "e3faea59-d757-4e31-9ff8-7da280bb8786",
+      "name": "Emit Results Row",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Results",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "id": "c41026b7-0eba-4fe1-9e34-88b3a4144b8a",
+      "name": "Append Results",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1300,
+        0
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "REPLACE_ME",
+          "name": "Google Service Account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $('Get Settings').first().json.settings.sender_name }} <{{ $('Get Settings').first().json.settings.sender_email }}>",
+        "toEmail": "={{ $('Compute Stats').first().json.to }}",
+        "subject": "={{ $('Compute Stats').first().json.subject }}",
+        "emailFormat": "text",
+        "text": "={{ $('Compute Stats').first().json.text }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "6846b108-892a-4b2f-b6bc-ba948501cd0a",
+      "name": "Email Owner Report",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1560,
+        0
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "REPLACE_ME",
+          "name": "Gmail SMTP"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst TZ = 'Africa/Lagos';\nconst s = (v) => String(v === null || v === undefined ? '' : v).trim();\nconst todayStr = () => new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date());\nconst nowIso = () => new Date(Date.now() + 3600000).toISOString().replace(/\\.\\d{3}Z$/, '+01:00');\nconst uid = (p) => p + '-' + Date.now().toString(36).toUpperCase() + '-' + Math.random().toString(36).slice(2, 7).toUpperCase();\nconst isEmail = (e) => /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(s(e));\nconst isDate = (d) => /^\\d{4}-\\d{2}-\\d{2}$/.test(d) && !isNaN(Date.parse(d + 'T00:00:00Z'));\nconst daysBetween = (a, b) => Math.floor((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000);\nconst mkLog = (o) => Object.assign({ event_id: uid('EVT'), customer_id: '', email: '', event_type: '', campaign_id: '', email_sequence: '', message_id: '', booking_id: '', timestamp: nowIso(), status: '', error: '', metadata: '' }, o);\nconst mkErr = (o) => Object.assign({ error_id: uid('ERR'), workflow: '', customer_id: '', node: '', error_type: 'UNKNOWN', message: '', timestamp: nowIso(), retry_count: 0, resolved: 'FALSE', execution_id: String($execution.id) }, o);\n\nconst c = $('Compute Stats').first().json;\nreturn [{ json: mkLog({ event_type: 'REPORT_SENT', campaign_id: c.camp, status: 'SUCCESS', metadata: 'Weekly report sent to owner' }) }];\n"
+      },
+      "id": "e01f2b0a-506d-429a-a716-1390b60cc5be",
+      "name": "Emit Report Sent Log",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1820,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Campaign_Log",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "id": "053b13f0-3f4a-4468-b26b-662eff768199",
+      "name": "Append Log (Report)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        2080,
+        0
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "REPLACE_ME",
+          "name": "Google Service Account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "content": "WF6 - Weekly Report\n\nAfter import:\n1. Every Google Sheets node: pick your service-account credential.\n2. 'Get Settings': choose 'WF0 - Get Settings'.\n3. 'Email Owner Report': pick your Gmail SMTP credential.\n4. Test with 'Manual Run'.\n5. Activate for the Monday 08:00 run.",
+        "height": 420,
+        "width": 320
+      },
+      "id": "9457b6b2-a52a-41dc-86e8-9849847267b9",
+      "name": "Setup Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -380,
+        -40
+      ]
+    }
+  ],
+  "connections": {
+    "Weekly Schedule": {
+      "main": [
+        [
+          {
+            "node": "Get Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Run": {
+      "main": [
+        [
+          {
+            "node": "Get Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Settings": {
+      "main": [
+        [
+          {
+            "node": "Read Campaign_Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Campaign_Log": {
+      "main": [
+        [
+          {
+            "node": "Compute Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compute Stats": {
+      "main": [
+        [
+          {
+            "node": "Emit Results Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Emit Results Row": {
+      "main": [
+        [
+          {
+            "node": "Append Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append Results": {
+      "main": [
+        [
+          {
+            "node": "Email Owner Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email Owner Report": {
+      "main": [
+        [
+          {
+            "node": "Emit Report Sent Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Emit Report Sent Log": {
+      "main": [
+        [
+          {
+            "node": "Append Log (Report)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Africa/Lagos"
+  },
+  "pinData": {}
+}

@@ -1,0 +1,15 @@
+Subject: Weekly customer reactivation report - Demo Home Services
+
+CUSTOMER REACTIVATION REPORT
+Campaign: REACTIVATION-DEMO-001   Date: 2026-10-19
+
+Customers eligible: 12
+Customers contacted: 12
+Follow-up emails sent: 7
+Bookings from this campaign: 2
+Booking rate: 16.7%
+Cancelled bookings: 0
+Unsubscribed: 1
+Emails that failed to send: 0
+
+Detailed results: https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit#gid=0

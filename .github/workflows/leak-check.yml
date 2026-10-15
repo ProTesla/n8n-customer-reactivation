@@ -1,0 +1,23 @@
+name: leak-check
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Workflow JSON is valid
+        run: |
+          python - <<'PY'
+          import json, glob
+          for f in sorted(glob.glob("workflows/*.json")):
+              json.load(open(f)); print("valid", f)
+          PY
+      - name: No private data in the repo
+        run: python scripts/sanitize.py --check

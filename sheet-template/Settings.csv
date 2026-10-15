@@ -1,0 +1,21 @@
+key,value
+business_name,Demo Home Services
+business_email,hello@example.com
+sender_name,Demo Home Services
+sender_email,your.gmail@gmail.com
+booking_link,https://cal.com/YOUR-USERNAME/YOUR-EVENT
+default_service,Home Cleaning
+current_offer,
+email_tone,friendly and professional
+reactivation_days,180
+max_followups,2
+days_between_followups,7
+max_emails_per_run,5
+campaign_id,REACTIVATION-DEMO-001
+campaign_enabled,OFF
+owner_email,owner@example.com
+operator_email,you@example.com
+public_base_url,https://YOUR-NGROK-DOMAIN
+report_sheet_url,
+timezone,Africa/Lagos
+openai_model,gpt-4o-mini

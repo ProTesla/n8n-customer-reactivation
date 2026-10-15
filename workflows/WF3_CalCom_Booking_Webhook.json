@@ -1,0 +1,940 @@
+{
+  "name": "WF3 - Cal.com Booking Webhook",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "cal-booking",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "id": "a781af74-f4e0-4924-bd7a-a92f6c3f7a06",
+      "name": "Cal.com Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "a74d37d8-4707-4c22-b9b2-82ef8cb05f64"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst TZ = 'Africa/Lagos';\nconst s = (v) => String(v === null || v === undefined ? '' : v).trim();\nconst todayStr = () => new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date());\nconst nowIso = () => new Date(Date.now() + 3600000).toISOString().replace(/\\.\\d{3}Z$/, '+01:00');\nconst uid = (p) => p + '-' + Date.now().toString(36).toUpperCase() + '-' + Math.random().toString(36).slice(2, 7).toUpperCase();\nconst isEmail = (e) => /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(s(e));\nconst isDate = (d) => /^\\d{4}-\\d{2}-\\d{2}$/.test(d) && !isNaN(Date.parse(d + 'T00:00:00Z'));\nconst daysBetween = (a, b) => Math.floor((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000);\nconst mkLog = (o) => Object.assign({ event_id: uid('EVT'), customer_id: '', email: '', event_type: '', campaign_id: '', email_sequence: '', message_id: '', booking_id: '', timestamp: nowIso(), status: '', error: '', metadata: '' }, o);\nconst mkErr = (o) => Object.assign({ error_id: uid('ERR'), workflow: '', customer_id: '', node: '', error_type: 'UNKNOWN', message: '', timestamp: nowIso(), retry_count: 0, resolved: 'FALSE', execution_id: String($execution.id) }, o);\n\nconst item = $input.first();\nconst hdr = item.json.headers || {};\nconst body = item.json.body || {};\nlet sigOk = false, sigReason = '';\ntry {\n  const secret = $env.CAL_WEBHOOK_SECRET;\n  if (!secret) {\n    sigReason = 'NO_SECRET_CONFIGURED';\n  } else {\n    const crypto = require('crypto');\n    const raw = await this.helpers.getBinaryDataBuffer(0, 'data');\n    const expected = crypto.createHmac('sha256', secret).update(raw).digest('hex');\n    const got = s(hdr['x-cal-signature-256']).replace(/^sha256=/i, '');\n    const a = Buffer.from(expected), b = Buffer.from(got);\n    sigOk = a.length === b.length && crypto.timingSafeEqual(a, b);\n    if (!sigOk) sigReason = 'SIGNATURE_MISMATCH';\n  }\n} catch (e) {\n  sigReason = 'SIGNATURE_CHECK_ERROR: ' + (e && e.message ? e.message : e);\n}\nconst trig = s(body.triggerEvent);\nconst p = body.payload || {};\nconst att = Array.isArray(p.attendees) && p.attendees[0] ? p.attendees[0] : {};\nconst resp = p.responses || {};\nconst rv = (k) => { const v = resp[k]; return v && typeof v === 'object' && 'value' in v ? v.value : (v === undefined ? '' : v); };\nconst email = s(att.email || rv('email')).toLowerCase();\nconst known = ['BOOKING_CREATED', 'BOOKING_CANCELLED', 'BOOKING_RESCHEDULED'].includes(trig);\nconst valid = known && !!s(p.uid) && !!s(p.startTime) && !!email;\nconst reason = !known ? 'UNKNOWN_EVENT' : (valid ? '' : 'MISSING_FIELDS');\nreturn [{ json: { sigOk, sigReason, valid, reason, trig, uid: s(p.uid), rescheduleUid: s(p.rescheduleUid || body.rescheduleUid),\n  startTime: s(p.startTime), endTime: s(p.endTime), email, attendeeName: s(att.name || rv('name')),\n  customerIdAnswer: s(rv('customer_id')), event_id: 'CAL-' + s(p.uid) + '-' + trig } }];\n"
+      },
+      "id": "ec14e5a8-5d99-478f-8fa5-d756455e5922",
+      "name": "Verify & Parse",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        260,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "0760433b-9e83-4e2c-87df-90adeb76930d",
+              "leftValue": "={{ $json.sigOk }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "3c6456aa-d714-4851-b156-7f6e9c7e2e3c",
+      "name": "Signature OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        520,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "invalid signature",
+        "options": {
+          "responseCode": 401
+        }
+      },
+      "id": "707795c9-0722-4948-899e-bd36689e58f1",
+      "name": "Respond 401",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        780,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst TZ = 'Africa/Lagos';\nconst s = (v) => String(v === null || v === undefined ? '' : v).trim();\nconst todayStr = () => new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date());\nconst nowIso = () => new Date(Date.now() + 3600000).toISOString().replace(/\\.\\d{3}Z$/, '+01:00');\nconst uid = (p) => p + '-' + Date.now().toString(36).toUpperCase() + '-' + Math.random().toString(36).slice(2, 7).toUpperCase();\nconst isEmail = (e) => /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(s(e));\nconst isDate = (d) => /^\\d{4}-\\d{2}-\\d{2}$/.test(d) && !isNaN(Date.parse(d + 'T00:00:00Z'));\nconst daysBetween = (a, b) => Math.floor((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000);\nconst mkLog = (o) => Object.assign({ event_id: uid('EVT'), customer_id: '', email: '', event_type: '', campaign_id: '', email_sequence: '', message_id: '', booking_id: '', timestamp: nowIso(), status: '', error: '', metadata: '' }, o);\nconst mkErr = (o) => Object.assign({ error_id: uid('ERR'), workflow: '', customer_id: '', node: '', error_type: 'UNKNOWN', message: '', timestamp: nowIso(), retry_count: 0, resolved: 'FALSE', execution_id: String($execution.id) }, o);\n\nconst v = $('Verify & Parse').first().json;\nreturn [{ json: mkLog({ email: v.email, event_type: 'WEBHOOK_REJECTED', status: 'REJECTED', error: v.sigReason, metadata: v.trig }) }];\n"
+      },
+      "id": "ce07e1e8-a977-42bf-8009-ba1319017088",
+      "name": "Emit Reject Log",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Campaign_Log",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "id": "cdac3db5-ae41-4bc0-b425-e40290131462",
+      "name": "Append Log (Rejected)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1300,
+        0
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "REPLACE_ME",
+          "name": "Google Service Account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "ok",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "14f42d20-1f7d-452b-a61c-a9adafef6301",
+      "name": "Respond 200",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        780,
+        190
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "76490642-ea36-4c9a-ad6f-33542f805e45",
+              "leftValue": "={{ $('Verify & Parse').first().json.valid }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "e95198ef-7e3a-40ad-b813-14bf7da28768",
+      "name": "Valid Event?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1040,
+        190
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst TZ = 'Africa/Lagos';\nconst s = (v) => String(v === null || v === undefined ? '' : v).trim();\nconst todayStr = () => new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date());\nconst nowIso = () => new Date(Date.now() + 3600000).toISOString().replace(/\\.\\d{3}Z$/, '+01:00');\nconst uid = (p) => p + '-' + Date.now().toString(36).toUpperCase() + '-' + Math.random().toString(36).slice(2, 7).toUpperCase();\nconst isEmail = (e) => /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(s(e));\nconst isDate = (d) => /^\\d{4}-\\d{2}-\\d{2}$/.test(d) && !isNaN(Date.parse(d + 'T00:00:00Z'));\nconst daysBetween = (a, b) => Math.floor((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000);\nconst mkLog = (o) => Object.assign({ event_id: uid('EVT'), customer_id: '', email: '', event_type: '', campaign_id: '', email_sequence: '', message_id: '', booking_id: '', timestamp: nowIso(), status: '', error: '', metadata: '' }, o);\nconst mkErr = (o) => Object.assign({ error_id: uid('ERR'), workflow: '', customer_id: '', node: '', error_type: 'UNKNOWN', message: '', timestamp: nowIso(), retry_count: 0, resolved: 'FALSE', execution_id: String($execution.id) }, o);\n\nconst v = $('Verify & Parse').first().json;\nreturn [{ json: mkLog({ email: v.email, event_type: 'UNKNOWN_EVENT', booking_id: v.uid, status: 'IGNORED', error: v.reason, metadata: v.trig }) }];\n"
+      },
+      "id": "29dacc40-e0a1-4f36-b960-6745d9cb2a27",
+      "name": "Emit Unknown Event Log",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1300,
+        190
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Campaign_Log",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "id": "706112ca-a63a-42e2-ad3c-ba52c8df8cfb",
+      "name": "Append Log (Unknown)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1560,
+        0
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "REPLACE_ME",
+          "name": "Google Service Account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "",
+          "mode": "list",
+          "cachedResultName": "WF0 - Get Settings"
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "8d26567c-0249-4f86-aa99-a5e43c33aa69",
+      "name": "Get Settings",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1300,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Campaign_Log",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "d79c0f88-84f6-40de-976e-a568f38b01db",
+      "name": "Read Campaign_Log",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1560,
+        190
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "REPLACE_ME",
+          "name": "Google Service Account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Customers",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "212550ef-9c0d-44be-846c-01c1c9718a0f",
+      "name": "Read Customers",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1820,
+        0
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "REPLACE_ME",
+          "name": "Google Service Account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst TZ = 'Africa/Lagos';\nconst s = (v) => String(v === null || v === undefined ? '' : v).trim();\nconst todayStr = () => new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date());\nconst nowIso = () => new Date(Date.now() + 3600000).toISOString().replace(/\\.\\d{3}Z$/, '+01:00');\nconst uid = (p) => p + '-' + Date.now().toString(36).toUpperCase() + '-' + Math.random().toString(36).slice(2, 7).toUpperCase();\nconst isEmail = (e) => /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(s(e));\nconst isDate = (d) => /^\\d{4}-\\d{2}-\\d{2}$/.test(d) && !isNaN(Date.parse(d + 'T00:00:00Z'));\nconst daysBetween = (a, b) => Math.floor((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000);\nconst mkLog = (o) => Object.assign({ event_id: uid('EVT'), customer_id: '', email: '', event_type: '', campaign_id: '', email_sequence: '', message_id: '', booking_id: '', timestamp: nowIso(), status: '', error: '', metadata: '' }, o);\nconst mkErr = (o) => Object.assign({ error_id: uid('ERR'), workflow: '', customer_id: '', node: '', error_type: 'UNKNOWN', message: '', timestamp: nowIso(), retry_count: 0, resolved: 'FALSE', execution_id: String($execution.id) }, o);\n\nconst V = $('Verify & Parse').first().json;\nconst S = $('Get Settings').first().json.settings;\nconst log = $input.all().map(i => i.json).filter(l => l.event_id);\nconst customers = $('Read Customers').all().map(i => i.json);\nconst now = nowIso();\nif (log.some(l => s(l.event_id) === V.event_id)) return [{ json: { kind: 'DUPLICATE' } }];\n\nlet cust = null, note = '';\nif (V.trig === 'BOOKING_RESCHEDULED' && V.rescheduleUid) {\n  const m = customers.filter(c => s(c.booking_id) === V.rescheduleUid);\n  if (m.length === 1) cust = m[0];\n}\nif (!cust && V.trig === 'BOOKING_CANCELLED') {\n  const m = customers.filter(c => s(c.booking_id) === V.uid);\n  if (m.length === 1) cust = m[0];\n}\nif (!cust && V.customerIdAnswer) {\n  const m = customers.filter(c => s(c.customer_id) === V.customerIdAnswer);\n  if (m.length === 1) {\n    cust = m[0];\n    if (s(cust.email).toLowerCase() !== V.email) note = 'EMAIL_MISMATCH: sheet ' + s(cust.email) + ' vs booking ' + V.email;\n  }\n}\nif (!cust && V.email) {\n  const m = customers.filter(c => s(c.email).toLowerCase() === V.email);\n  if (m.length === 1) cust = m[0];\n  else if (m.length > 1) note = 'AMBIGUOUS_EMAIL';\n}\nconst row = (type, cid, status, err, meta) => mkLog({ event_id: V.event_id, customer_id: cid, email: V.email, event_type: type,\n  campaign_id: s(S.campaign_id), booking_id: V.uid, timestamp: now, status, error: err || '', metadata: meta || '' });\n\nif (!cust) {\n  return [{ json: { kind: 'UNMATCHED',\n    logRow: row('BOOKING_UNMATCHED', '', 'UNMATCHED', note || 'NO_CUSTOMER_MATCH', V.trig),\n    errorRow: mkErr({ workflow: 'WF3 - Cal.com Booking Webhook', node: 'Process Booking', error_type: 'UNMATCHED_BOOKING',\n      message: 'No customer matched for booking ' + V.uid + ' (' + V.email + ') ' + note }),\n    alert: { to: s(S.operator_email), subject: 'Unmatched booking needs attention',\n      text: 'A ' + V.trig + ' event could not be matched to a customer.\\n\\nBooking ID: ' + V.uid + '\\nAttendee: ' + V.attendeeName + ' <' + V.email + '>\\nStart: ' + V.startTime + '\\nNote: ' + (note || 'none') + '\\n\\nCheck the Customers and Campaign_Log sheets.' } } }];\n}\nconst cid = s(cust.customer_id);\nconst existing = s(cust.booking_id);\nlet logType, update = null, meta = note;\nif (V.trig === 'BOOKING_CREATED') {\n  logType = 'BOOKING_CREATED';\n  if (s(cust.booking_status) === 'BOOKED' && existing && existing !== V.uid) {\n    meta = ('EXTRA_BOOKING ' + note).trim();\n  } else {\n    update = { customer_id: cid, booking_status: 'BOOKED', campaign_status: 'STOPPED', stop_reason: 'BOOKED', booking_id: V.uid, booking_date: V.startTime, updated_at: now };\n  }\n} else if (V.trig === 'BOOKING_CANCELLED') {\n  logType = 'BOOKING_CANCELLED';\n  if (existing && existing !== V.uid) {\n    meta = ('NOT_CURRENT_BOOKING ' + note).trim();\n  } else {\n    update = { customer_id: cid, booking_status: 'CANCELLED', updated_at: now };\n  }\n} else {\n  logType = 'BOOKING_RESCHEDULED';\n  update = { customer_id: cid, booking_status: 'BOOKED', booking_id: V.uid, booking_date: V.startTime, updated_at: now };\n  if (s(cust.booking_status) !== 'BOOKED') { update.campaign_status = 'STOPPED'; update.stop_reason = 'BOOKED'; }\n}\nreturn [{ json: { kind: update ? 'MATCHED' : 'LOGONLY', logRow: row(logType, cid, 'SUCCESS', '', meta), customerUpdate: update } }];\n"
+      },
+      "id": "edb5e1a8-1cf9-4b8d-b3b0-849b92f8071d",
+      "name": "Process Booking",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2080,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "dc1818a9-881f-4f5d-9bb5-2b0081f0de0d",
+              "leftValue": "={{ $json.kind !== 'DUPLICATE' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "46fdfd60-3c02-43c0-ae3e-b24227aecaf2",
+      "name": "Not Duplicate?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2340,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: $('Process Booking').first().json.logRow }];"
+      },
+      "id": "f17cb3c2-75f6-474a-b44d-e1582421ab70",
+      "name": "Emit Booking Log",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2600,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Campaign_Log",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "id": "5891e14d-61d1-43fc-a5c8-3660fbcfecdf",
+      "name": "Append Log (Booking)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        2860,
+        0
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "REPLACE_ME",
+          "name": "Google Service Account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "e02bae48-78f2-474a-b801-559387f469d2",
+              "leftValue": "={{ $('Process Booking').first().json.kind === 'MATCHED' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "504678fb-2e3a-4149-b970-62c0a12c1ee3",
+      "name": "Needs Customer Update?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3120,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: $('Process Booking').first().json.customerUpdate }];"
+      },
+      "id": "008819de-8cba-4d6b-8964-3db96ff00a9f",
+      "name": "Emit Customer Update",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3380,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "sheet",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Customers",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [
+            "customer_id"
+          ],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "id": "4f0fe874-119e-48b5-b726-05a5ee47608c",
+      "name": "Update Customer (Booking)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        3640,
+        0
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "REPLACE_ME",
+          "name": "Google Service Account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "a60b58d6-bc41-47a2-bf9b-472e957d5a9b",
+              "leftValue": "={{ $('Process Booking').first().json.kind === 'UNMATCHED' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "fea2603b-60c0-4f5d-aac3-fec6dc12ba76",
+      "name": "Is Unmatched?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3380,
+        190
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: $('Process Booking').first().json.errorRow }];"
+      },
+      "id": "69eef470-fce0-43b5-b6fb-a05c6b402e7d",
+      "name": "Emit Unmatched Error Row",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3640,
+        190
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Errors",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "id": "50624d3f-f118-4c0d-9e74-bd2035159d96",
+      "name": "Append Errors (Unmatched)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        3900,
+        0
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "REPLACE_ME",
+          "name": "Google Service Account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $('Get Settings').first().json.settings.sender_name }} <{{ $('Get Settings').first().json.settings.sender_email }}>",
+        "toEmail": "={{ $('Process Booking').first().json.alert.to }}",
+        "subject": "={{ $('Process Booking').first().json.alert.subject }}",
+        "emailFormat": "text",
+        "text": "={{ $('Process Booking').first().json.alert.text }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "9f3902d8-8997-4a01-b596-277a87cac04a",
+      "name": "Alert Operator (Unmatched)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        4160,
+        0
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "REPLACE_ME",
+          "name": "Gmail SMTP"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "content": "WF3 - Cal.com Booking Webhook\n\nAfter import:\n1. Every Google Sheets node: pick your service-account credential.\n2. 'Get Settings': choose 'WF0 - Get Settings'.\n3. 'Alert Operator (Unmatched)': pick your Gmail SMTP credential.\n4. n8n needs env vars CAL_WEBHOOK_SECRET=<your secret> and N8N_BLOCK_ENV_ACCESS_IN_NODE=false, then restart.\n5. Activate the workflow.\n6. In Cal.com create the webhook:\n   https://YOUR-NGROK-DOMAIN/webhook/cal-booking\n   Events: Created, Cancelled, Rescheduled. Same secret as step 4.",
+        "height": 420,
+        "width": 320
+      },
+      "id": "f9c7c8d3-663c-4a36-a203-e323df8388b7",
+      "name": "Setup Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -380,
+        -40
+      ]
+    }
+  ],
+  "connections": {
+    "Cal.com Webhook": {
+      "main": [
+        [
+          {
+            "node": "Verify & Parse",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify & Parse": {
+      "main": [
+        [
+          {
+            "node": "Signature OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Signature OK?": {
+      "main": [
+        [
+          {
+            "node": "Respond 200",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 401",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond 401": {
+      "main": [
+        [
+          {
+            "node": "Emit Reject Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Emit Reject Log": {
+      "main": [
+        [
+          {
+            "node": "Append Log (Rejected)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond 200": {
+      "main": [
+        [
+          {
+            "node": "Valid Event?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valid Event?": {
+      "main": [
+        [
+          {
+            "node": "Get Settings",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Emit Unknown Event Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Emit Unknown Event Log": {
+      "main": [
+        [
+          {
+            "node": "Append Log (Unknown)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Settings": {
+      "main": [
+        [
+          {
+            "node": "Read Campaign_Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Campaign_Log": {
+      "main": [
+        [
+          {
+            "node": "Read Customers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Customers": {
+      "main": [
+        [
+          {
+            "node": "Process Booking",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Booking": {
+      "main": [
+        [
+          {
+            "node": "Not Duplicate?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Not Duplicate?": {
+      "main": [
+        [
+          {
+            "node": "Emit Booking Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Emit Booking Log": {
+      "main": [
+        [
+          {
+            "node": "Append Log (Booking)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append Log (Booking)": {
+      "main": [
+        [
+          {
+            "node": "Needs Customer Update?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs Customer Update?": {
+      "main": [
+        [
+          {
+            "node": "Emit Customer Update",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Is Unmatched?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Emit Customer Update": {
+      "main": [
+        [
+          {
+            "node": "Update Customer (Booking)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Unmatched?": {
+      "main": [
+        [
+          {
+            "node": "Emit Unmatched Error Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Emit Unmatched Error Row": {
+      "main": [
+        [
+          {
+            "node": "Append Errors (Unmatched)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append Errors (Unmatched)": {
+      "main": [
+        [
+          {
+            "node": "Alert Operator (Unmatched)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Africa/Lagos"
+  },
+  "pinData": {}
+}

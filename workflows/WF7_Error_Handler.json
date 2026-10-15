@@ -1,0 +1,192 @@
+{
+  "name": "WF7 - Error Handler",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "c9b90e3a-0126-4e30-91b1-0fe44bcab849",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst TZ = 'Africa/Lagos';\nconst s = (v) => String(v === null || v === undefined ? '' : v).trim();\nconst todayStr = () => new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date());\nconst nowIso = () => new Date(Date.now() + 3600000).toISOString().replace(/\\.\\d{3}Z$/, '+01:00');\nconst uid = (p) => p + '-' + Date.now().toString(36).toUpperCase() + '-' + Math.random().toString(36).slice(2, 7).toUpperCase();\nconst isEmail = (e) => /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(s(e));\nconst isDate = (d) => /^\\d{4}-\\d{2}-\\d{2}$/.test(d) && !isNaN(Date.parse(d + 'T00:00:00Z'));\nconst daysBetween = (a, b) => Math.floor((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000);\nconst mkLog = (o) => Object.assign({ event_id: uid('EVT'), customer_id: '', email: '', event_type: '', campaign_id: '', email_sequence: '', message_id: '', booking_id: '', timestamp: nowIso(), status: '', error: '', metadata: '' }, o);\nconst mkErr = (o) => Object.assign({ error_id: uid('ERR'), workflow: '', customer_id: '', node: '', error_type: 'UNKNOWN', message: '', timestamp: nowIso(), retry_count: 0, resolved: 'FALSE', execution_id: String($execution.id) }, o);\n\nconst e = $json;\nconst ex = e.execution || {};\nconst msg = s(ex.error && ex.error.message).slice(0, 500);\nreturn [{ json: mkErr({ workflow: s(e.workflow && e.workflow.name), node: s(ex.lastNodeExecuted), error_type: 'UNKNOWN', message: msg, execution_id: s(ex.id) }) }];\n"
+      },
+      "id": "4e27222a-f4d5-4b73-824a-1667a99dfc2d",
+      "name": "Build Error Row",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        260,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Errors",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "id": "0894f89c-4260-423d-98c8-c9f89aa2a32d",
+      "name": "Append Errors",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        520,
+        0
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "REPLACE_ME",
+          "name": "Google Service Account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "",
+          "mode": "list",
+          "cachedResultName": "WF0 - Get Settings"
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "509db56e-f9dd-47fe-9bf1-af7fa09960ff",
+      "name": "Get Settings",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        780,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $('Get Settings').first().json.settings.sender_name }} <{{ $('Get Settings').first().json.settings.sender_email }}>",
+        "toEmail": "={{ $('Get Settings').first().json.settings.operator_email }}",
+        "subject": "={{ 'Workflow failed: ' + ($('Error Trigger').first().json.workflow ? $('Error Trigger').first().json.workflow.name : 'unknown') }}",
+        "emailFormat": "text",
+        "text": "={{ 'Workflow: ' + ($('Error Trigger').first().json.workflow ? $('Error Trigger').first().json.workflow.name : '') + '\\nNode: ' + ($('Error Trigger').first().json.execution ? $('Error Trigger').first().json.execution.lastNodeExecuted : '') + '\\nError: ' + ($('Error Trigger').first().json.execution && $('Error Trigger').first().json.execution.error ? $('Error Trigger').first().json.execution.error.message : '') + '\\nExecution: ' + ($('Error Trigger').first().json.execution ? ($('Error Trigger').first().json.execution.url || $('Error Trigger').first().json.execution.id) : '') }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "690a98fa-37f3-49ca-8dc9-f31a6da0a302",
+      "name": "Email Operator",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1040,
+        0
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "REPLACE_ME",
+          "name": "Gmail SMTP"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "content": "WF7 - Error Handler\n\nAfter import:\n1. 'Append Errors': pick your service-account credential.\n2. 'Get Settings': choose 'WF0 - Get Settings'.\n3. 'Email Operator': pick your Gmail SMTP credential.\n4. Activate.\n5. In WF1, WF2, WF3, WF5, WF6 and WF8: Settings (three dots) > Error workflow > choose 'WF7 - Error Handler'.",
+        "height": 420,
+        "width": 320
+      },
+      "id": "d807017f-75e9-43a9-b113-9d8a95970781",
+      "name": "Setup Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -380,
+        -40
+      ]
+    }
+  ],
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Build Error Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Error Row": {
+      "main": [
+        [
+          {
+            "node": "Append Errors",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append Errors": {
+      "main": [
+        [
+          {
+            "node": "Get Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Settings": {
+      "main": [
+        [
+          {
+            "node": "Email Operator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Africa/Lagos"
+  },
+  "pinData": {}
+}

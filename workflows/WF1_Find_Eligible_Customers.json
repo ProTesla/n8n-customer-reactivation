@@ -1,0 +1,725 @@
+{
+  "name": "WF1 - Find Eligible Customers",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "daysInterval": 1,
+              "triggerAtHour": 9
+            }
+          ]
+        }
+      },
+      "id": "967d02b7-9864-4199-afb9-9b0a61b5e64f",
+      "name": "Daily Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "8a6abc1d-1397-45bd-8c98-94252d15ad8c",
+      "name": "Manual Run",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        190
+      ]
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "",
+          "mode": "list",
+          "cachedResultName": "WF0 - Get Settings"
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "dd4b91b7-61e9-4f2f-a96c-264688b8bd8d",
+      "name": "Get Settings",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        260,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "886e454c-4572-4abf-8efd-67cb8faec1ef",
+              "leftValue": "={{ $json.settings.campaign_enabled === 'ON' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "46cd6e8a-07cf-4797-84c5-85c1fb917e02",
+      "name": "Campaign Enabled?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        520,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst TZ = 'Africa/Lagos';\nconst s = (v) => String(v === null || v === undefined ? '' : v).trim();\nconst todayStr = () => new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date());\nconst nowIso = () => new Date(Date.now() + 3600000).toISOString().replace(/\\.\\d{3}Z$/, '+01:00');\nconst uid = (p) => p + '-' + Date.now().toString(36).toUpperCase() + '-' + Math.random().toString(36).slice(2, 7).toUpperCase();\nconst isEmail = (e) => /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(s(e));\nconst isDate = (d) => /^\\d{4}-\\d{2}-\\d{2}$/.test(d) && !isNaN(Date.parse(d + 'T00:00:00Z'));\nconst daysBetween = (a, b) => Math.floor((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000);\nconst mkLog = (o) => Object.assign({ event_id: uid('EVT'), customer_id: '', email: '', event_type: '', campaign_id: '', email_sequence: '', message_id: '', booking_id: '', timestamp: nowIso(), status: '', error: '', metadata: '' }, o);\nconst mkErr = (o) => Object.assign({ error_id: uid('ERR'), workflow: '', customer_id: '', node: '', error_type: 'UNKNOWN', message: '', timestamp: nowIso(), retry_count: 0, resolved: 'FALSE', execution_id: String($execution.id) }, o);\n\nconst g = $('Get Settings').first().json;\nreturn [{ json: mkLog({ event_type: 'CAMPAIGN_OFF_SKIP', campaign_id: s(g.settings.campaign_id), status: 'SKIPPED',\n  metadata: g.problems && g.problems.length ? 'Settings problems: ' + g.problems.join(', ') : 'campaign_enabled is not ON' }) }];\n"
+      },
+      "id": "0a5add2b-c030-4d95-8fd9-521c13dceef5",
+      "name": "Emit Campaign Off Log",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        780,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Campaign_Log",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "id": "df17c679-d201-4af1-a479-076cf9e5b8af",
+      "name": "Append Log (Off)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1040,
+        0
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "REPLACE_ME",
+          "name": "Google Service Account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Customers",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "f2126506-ebf3-4d97-b379-3c4cd136d741",
+      "name": "Read Customers",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        780,
+        190
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "REPLACE_ME",
+          "name": "Google Service Account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Campaign_Log",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "5365e062-bcf5-426d-8d9c-90307260f987",
+      "name": "Read Campaign_Log",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1040,
+        190
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "REPLACE_ME",
+          "name": "Google Service Account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst TZ = 'Africa/Lagos';\nconst s = (v) => String(v === null || v === undefined ? '' : v).trim();\nconst todayStr = () => new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date());\nconst nowIso = () => new Date(Date.now() + 3600000).toISOString().replace(/\\.\\d{3}Z$/, '+01:00');\nconst uid = (p) => p + '-' + Date.now().toString(36).toUpperCase() + '-' + Math.random().toString(36).slice(2, 7).toUpperCase();\nconst isEmail = (e) => /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(s(e));\nconst isDate = (d) => /^\\d{4}-\\d{2}-\\d{2}$/.test(d) && !isNaN(Date.parse(d + 'T00:00:00Z'));\nconst daysBetween = (a, b) => Math.floor((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000);\nconst mkLog = (o) => Object.assign({ event_id: uid('EVT'), customer_id: '', email: '', event_type: '', campaign_id: '', email_sequence: '', message_id: '', booking_id: '', timestamp: nowIso(), status: '', error: '', metadata: '' }, o);\nconst mkErr = (o) => Object.assign({ error_id: uid('ERR'), workflow: '', customer_id: '', node: '', error_type: 'UNKNOWN', message: '', timestamp: nowIso(), retry_count: 0, resolved: 'FALSE', execution_id: String($execution.id) }, o);\n\nfunction sendBlocked(log, cust, camp, seq) {\n  let started = false, fails = 0;\n  for (const l of log) {\n    if (s(l.customer_id) !== cust || s(l.campaign_id) !== camp || s(l.email_sequence) !== seq) continue;\n    if (l.event_type === 'EMAIL_SEND_STARTED') started = true;\n    else if (l.event_type === 'EMAIL_FAILED') { started = false; fails++; }\n  }\n  return { blocked: started, fails };\n}\n\nconst S = $('Get Settings').first().json.settings;\nconst rows = $('Read Customers').all().map(i => i.json).filter(r => s(r.customer_id) || s(r.email));\nconst log = $input.all().map(i => i.json).filter(l => l.event_id);\nconst camp = s(S.campaign_id);\nconst today = todayStr();\nconst idCount = {};\nrows.forEach(r => { const id = s(r.customer_id); if (id) idCount[id] = (idCount[id] || 0) + 1; });\nlet cr = null;\ntry { cr = require('crypto'); } catch (e) { cr = null; }\nconst token = () => cr ? cr.randomBytes(16).toString('hex') : Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');\nconst out = [];\nfor (const r of rows) {\n  const id = s(r.customer_id);\n  if (!id || idCount[id] !== 1) continue;\n  if (!isEmail(r.email)) continue;\n  if (!isDate(s(r.last_service_date))) continue;\n  if (s(r.consent_status) !== 'OPTED_IN') continue;\n  if (s(r.booking_status) === 'BOOKED') continue;\n  const cs = s(r.campaign_status) || 'NOT_STARTED';\n  if (!['NOT_STARTED', 'ELIGIBLE'].includes(cs)) continue;\n  if (daysBetween(s(r.last_service_date), today) <= S.reactivation_days) continue;\n  const b = sendBlocked(log, id, camp, 'INITIAL');\n  if (b.blocked || b.fails >= 3) continue;\n  out.push(r);\n}\nout.sort((a, b) => (s(a.last_service_date) < s(b.last_service_date) ? -1 : 1));\nconst cap = Math.max(0, Number(S.max_emails_per_run) || 0);\nconst now = nowIso();\nreturn out.slice(0, cap).map(r => ({ json: {\n  customer_id: s(r.customer_id),\n  customer_status: 'INACTIVE',\n  campaign_status: 'ELIGIBLE',\n  unsubscribe_token: s(r.unsubscribe_token) || token(),\n  updated_at: now } }));\n"
+      },
+      "id": "02130a28-2b40-413f-8050-91d3f5cba911",
+      "name": "Eligibility Filter",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1300,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "sheet",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Customers",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [
+            "customer_id"
+          ],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "id": "a8b72cbc-0697-4ff7-a2f4-8b3d01094abf",
+      "name": "Update Customers (ELIGIBLE)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1560,
+        0
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "REPLACE_ME",
+          "name": "Google Service Account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst TZ = 'Africa/Lagos';\nconst s = (v) => String(v === null || v === undefined ? '' : v).trim();\nconst todayStr = () => new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date());\nconst nowIso = () => new Date(Date.now() + 3600000).toISOString().replace(/\\.\\d{3}Z$/, '+01:00');\nconst uid = (p) => p + '-' + Date.now().toString(36).toUpperCase() + '-' + Math.random().toString(36).slice(2, 7).toUpperCase();\nconst isEmail = (e) => /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(s(e));\nconst isDate = (d) => /^\\d{4}-\\d{2}-\\d{2}$/.test(d) && !isNaN(Date.parse(d + 'T00:00:00Z'));\nconst daysBetween = (a, b) => Math.floor((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000);\nconst mkLog = (o) => Object.assign({ event_id: uid('EVT'), customer_id: '', email: '', event_type: '', campaign_id: '', email_sequence: '', message_id: '', booking_id: '', timestamp: nowIso(), status: '', error: '', metadata: '' }, o);\nconst mkErr = (o) => Object.assign({ error_id: uid('ERR'), workflow: '', customer_id: '', node: '', error_type: 'UNKNOWN', message: '', timestamp: nowIso(), retry_count: 0, resolved: 'FALSE', execution_id: String($execution.id) }, o);\n\nconst S = $('Get Settings').first().json.settings;\nconst custs = {};\n$('Read Customers').all().forEach(i => { custs[s(i.json.customer_id)] = i.json; });\nreturn $('Eligibility Filter').all().map(i => ({ json: mkLog({\n  customer_id: i.json.customer_id, email: s((custs[i.json.customer_id] || {}).email),\n  event_type: 'ELIGIBLE_MARKED', campaign_id: s(S.campaign_id), email_sequence: 'INITIAL', status: 'SUCCESS' }) }));\n"
+      },
+      "id": "feccf47e-5e6e-4db0-a138-e3b30e17fdfb",
+      "name": "Emit Eligible Log Rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1820,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Campaign_Log",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "id": "825f1d66-e4ad-45c0-a234-ed3f7b9a4151",
+      "name": "Append Log (Eligible)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        2080,
+        0
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "REPLACE_ME",
+          "name": "Google Service Account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "\nreturn $('Eligibility Filter').all().map(i => ({ json: { customer_id: i.json.customer_id, email_sequence: 'INITIAL' } }));\n"
+      },
+      "id": "7467a236-c4e7-44ea-bc46-af755cac9535",
+      "name": "Prepare WF2 Calls",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2340,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "8b87c188-22d2-45d0-940b-3c34dbe61176",
+      "name": "Loop Customers",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        2600,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "",
+          "mode": "list",
+          "cachedResultName": "WF2 - Send Campaign Email"
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "0b81ee04-9f36-4618-9115-4c12e4922834",
+      "name": "Call WF2 - Send Email",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        2860,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "amount": 7,
+        "unit": "seconds"
+      },
+      "id": "d4ab7d92-06de-49ee-9a46-962c148bcf16",
+      "name": "Pause Between Customers",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        3120,
+        0
+      ],
+      "webhookId": "dc2e56bb-1b3d-4109-8d43-798df6bafbab"
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Errors",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "46b52399-018e-4720-a188-44fb2a41f835",
+      "name": "Read Errors",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1300,
+        190
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "REPLACE_ME",
+          "name": "Google Service Account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst TZ = 'Africa/Lagos';\nconst s = (v) => String(v === null || v === undefined ? '' : v).trim();\nconst todayStr = () => new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date());\nconst nowIso = () => new Date(Date.now() + 3600000).toISOString().replace(/\\.\\d{3}Z$/, '+01:00');\nconst uid = (p) => p + '-' + Date.now().toString(36).toUpperCase() + '-' + Math.random().toString(36).slice(2, 7).toUpperCase();\nconst isEmail = (e) => /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(s(e));\nconst isDate = (d) => /^\\d{4}-\\d{2}-\\d{2}$/.test(d) && !isNaN(Date.parse(d + 'T00:00:00Z'));\nconst daysBetween = (a, b) => Math.floor((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000);\nconst mkLog = (o) => Object.assign({ event_id: uid('EVT'), customer_id: '', email: '', event_type: '', campaign_id: '', email_sequence: '', message_id: '', booking_id: '', timestamp: nowIso(), status: '', error: '', metadata: '' }, o);\nconst mkErr = (o) => Object.assign({ error_id: uid('ERR'), workflow: '', customer_id: '', node: '', error_type: 'UNKNOWN', message: '', timestamp: nowIso(), retry_count: 0, resolved: 'FALSE', execution_id: String($execution.id) }, o);\n\nconst rows = $('Read Customers').all().map(i => i.json).filter(r => s(r.customer_id) || s(r.email) || s(r.first_name));\nconst existing = $input.all().map(i => i.json).filter(e => e.error_type === 'DATA_QUALITY' && s(e.resolved).toUpperCase() !== 'TRUE');\nconst seen = new Set(existing.map(e => s(e.customer_id) + '|' + s(e.message)));\nconst idCount = {};\nrows.forEach(r => { const id = s(r.customer_id); if (id) idCount[id] = (idCount[id] || 0) + 1; });\nconst out = [];\nconst add = (r, msg) => {\n  const key = s(r.customer_id) + '|' + msg;\n  if (seen.has(key)) return;\n  seen.add(key);\n  out.push({ json: mkErr({ workflow: 'WF1 - Find Eligible Customers', customer_id: s(r.customer_id), node: 'Data Quality Check', error_type: 'DATA_QUALITY', message: msg }) });\n};\nfor (const r of rows) {\n  const cs = s(r.campaign_status) || 'NOT_STARTED';\n  if (!['NOT_STARTED', 'ELIGIBLE'].includes(cs)) continue;\n  if (s(r.booking_status) === 'BOOKED') continue;\n  if (['UNSUBSCRIBED', 'DO_NOT_CONTACT'].includes(s(r.consent_status))) continue;\n  const id = s(r.customer_id);\n  if (!id) add(r, 'Missing customer_id (email: ' + s(r.email) + ')');\n  else if (idCount[id] > 1) add(r, 'Duplicate customer_id');\n  if (!isEmail(r.email)) add(r, 'Invalid email: ' + s(r.email));\n  const d = s(r.last_service_date);\n  if (d && !isDate(d)) add(r, 'Unparseable last_service_date: ' + d);\n}\nreturn out;\n"
+      },
+      "id": "e8ea920f-4e1d-4140-aeab-72d5c4acd168",
+      "name": "Data Quality Check",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1560,
+        190
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Errors",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "id": "25894c0a-fb5b-4b1c-bc7e-e6bec2baeb2e",
+      "name": "Append Errors (Data Quality)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1820,
+        190
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "REPLACE_ME",
+          "name": "Google Service Account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "content": "WF1 - Find Eligible Customers\n\nAfter import:\n1. Every Google Sheets node: pick your service-account credential.\n2. 'Get Settings' node: choose workflow 'WF0 - Get Settings'.\n3. 'Call WF2 - Send Email' node: choose 'WF2 - Send Campaign Email'.\n4. Test with 'Manual Run' (Execute workflow) before activating.\n5. Activate only when you want the daily 09:00 run.",
+        "height": 420,
+        "width": 320
+      },
+      "id": "210617b2-90a2-4914-b981-432b9af56d33",
+      "name": "Setup Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -380,
+        -40
+      ]
+    }
+  ],
+  "connections": {
+    "Daily Schedule": {
+      "main": [
+        [
+          {
+            "node": "Get Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Run": {
+      "main": [
+        [
+          {
+            "node": "Get Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Settings": {
+      "main": [
+        [
+          {
+            "node": "Campaign Enabled?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Campaign Enabled?": {
+      "main": [
+        [
+          {
+            "node": "Read Customers",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Emit Campaign Off Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Emit Campaign Off Log": {
+      "main": [
+        [
+          {
+            "node": "Append Log (Off)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Customers": {
+      "main": [
+        [
+          {
+            "node": "Read Campaign_Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Campaign_Log": {
+      "main": [
+        [
+          {
+            "node": "Eligibility Filter",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Read Errors",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Eligibility Filter": {
+      "main": [
+        [
+          {
+            "node": "Update Customers (ELIGIBLE)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Customers (ELIGIBLE)": {
+      "main": [
+        [
+          {
+            "node": "Emit Eligible Log Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Emit Eligible Log Rows": {
+      "main": [
+        [
+          {
+            "node": "Append Log (Eligible)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append Log (Eligible)": {
+      "main": [
+        [
+          {
+            "node": "Prepare WF2 Calls",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare WF2 Calls": {
+      "main": [
+        [
+          {
+            "node": "Loop Customers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Customers": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Call WF2 - Send Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call WF2 - Send Email": {
+      "main": [
+        [
+          {
+            "node": "Pause Between Customers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pause Between Customers": {
+      "main": [
+        [
+          {
+            "node": "Loop Customers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Errors": {
+      "main": [
+        [
+          {
+            "node": "Data Quality Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Data Quality Check": {
+      "main": [
+        [
+          {
+            "node": "Append Errors (Data Quality)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Africa/Lagos"
+  },
+  "pinData": {}
+}

@@ -1,0 +1,112 @@
+{
+  "name": "WF0 - Get Settings",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "id": "e9445b9f-9d8e-4e32-9254-e6d7f35f4884",
+      "name": "Start",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Settings",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "4bf7388d-4a42-49d1-b1c1-f94a68e497bd",
+      "name": "Read Settings",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        260,
+        0
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "REPLACE_ME",
+          "name": "Google Service Account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst TZ = 'Africa/Lagos';\nconst s = (v) => String(v === null || v === undefined ? '' : v).trim();\nconst todayStr = () => new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date());\nconst nowIso = () => new Date(Date.now() + 3600000).toISOString().replace(/\\.\\d{3}Z$/, '+01:00');\nconst uid = (p) => p + '-' + Date.now().toString(36).toUpperCase() + '-' + Math.random().toString(36).slice(2, 7).toUpperCase();\nconst isEmail = (e) => /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(s(e));\nconst isDate = (d) => /^\\d{4}-\\d{2}-\\d{2}$/.test(d) && !isNaN(Date.parse(d + 'T00:00:00Z'));\nconst daysBetween = (a, b) => Math.floor((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000);\nconst mkLog = (o) => Object.assign({ event_id: uid('EVT'), customer_id: '', email: '', event_type: '', campaign_id: '', email_sequence: '', message_id: '', booking_id: '', timestamp: nowIso(), status: '', error: '', metadata: '' }, o);\nconst mkErr = (o) => Object.assign({ error_id: uid('ERR'), workflow: '', customer_id: '', node: '', error_type: 'UNKNOWN', message: '', timestamp: nowIso(), retry_count: 0, resolved: 'FALSE', execution_id: String($execution.id) }, o);\n\nconst rows = $input.all().map(i => i.json);\nconst S = {};\nfor (const r of rows) { const k = s(r.key); if (k) S[k] = s(r.value); }\nconst required = ['business_name', 'sender_name', 'sender_email', 'booking_link', 'reactivation_days', 'max_followups',\n  'days_between_followups', 'max_emails_per_run', 'campaign_id', 'campaign_enabled', 'owner_email', 'operator_email', 'public_base_url'];\nconst missing = required.filter(k => !S[k]);\nconst nums = ['reactivation_days', 'max_followups', 'days_between_followups', 'max_emails_per_run'];\nconst badNums = nums.filter(k => S[k] !== undefined && S[k] !== '' && !Number.isFinite(Number(S[k])));\nnums.forEach(k => { S[k] = Number(S[k]); });\nconst problems = missing.concat(badNums.map(k => k + ' (not a number)'));\nS.campaign_enabled = (S.campaign_enabled === 'ON' && problems.length === 0) ? 'ON' : 'OFF';\nS.current_offer = S.current_offer || '';\nS.timezone = S.timezone || 'Africa/Lagos';\nS.openai_model = S.openai_model || 'gpt-4o-mini';\nreturn [{ json: { settings: S, problems } }];\n"
+      },
+      "id": "176fa3f4-6249-4b8b-8860-c88eb4a3f1a5",
+      "name": "Build Settings",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        520,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "content": "WF0 - Get Settings\n\nUtility workflow. Called by every other workflow.\n\nAfter import:\n1. Open 'Read Settings' and pick your Google service-account credential.\n2. Save. No need to activate it (it is only called by other workflows).",
+        "height": 420,
+        "width": 320
+      },
+      "id": "d27c0e29-0107-4e14-a591-5b168e784e73",
+      "name": "Setup Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -380,
+        -40
+      ]
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "Read Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Settings": {
+      "main": [
+        [
+          {
+            "node": "Build Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Africa/Lagos"
+  },
+  "pinData": {}
+}
